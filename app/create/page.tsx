@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AppHeader, Shell } from "@/components/AppHeader";
 import { Icon } from "@/components/Icon";
 import { PrimaryButton, StickerCard } from "@/components/ui";
+import { VenuePicker, type Spot } from "@/components/VenuePicker";
 import { createMeetup } from "@/lib/room";
 import { useNow } from "@/lib/useNow";
 import { useToast } from "@/components/Toast";
@@ -45,7 +46,7 @@ export default function CreatePage() {
   const router = useRouter();
   const toast = useToast();
 
-  const [venue, setVenue] = useState("Bandra Social, Mumbai");
+  const [spot, setSpot] = useState<Spot | null>(null);
   const [nickname, setNickname] = useState("Amrit");
   const [choice, setChoice] = useState<Choice>("tonight");
   const [customTime, setCustomTime] = useState("20:30");
@@ -61,19 +62,21 @@ export default function CreatePage() {
   }, [choice, customTime, now]);
 
   async function handleCreate() {
-    if (!venue.trim()) {
-      toast("Pick a spot first 📍", "place");
+    if (!spot) {
+      toast("Search for the spot and pick it first 📍", "place");
       return;
     }
     setSubmitting(true);
     const when = resolveWhen(choice, customTime, Date.now());
     try {
       const code = await createMeetup({
-        venue,
-        area: venue,
+        venue: spot.venue,
+        area: spot.area,
         whenLabel: when.whenLabel,
         minutesFromNow: when.minutesFromNow,
         hostName: nickname,
+        lat: spot.lat,
+        lng: spot.lng,
       });
       router.push(`/m/${code}`);
     } catch (err) {
@@ -124,56 +127,7 @@ export default function CreatePage() {
 
           <div className="flex flex-col gap-4">
             {/* ── The Spot ─────────────────────────────────────── */}
-            <StickerCard className="flex flex-col gap-3 p-4">
-              <div className="flex items-center justify-between">
-                <label
-                  htmlFor="venue"
-                  className="text-on-surface flex items-center gap-1.5 text-label-lg font-headline"
-                >
-                  <Icon name="place" size={18} fill className="text-primary" />
-                  The Spot
-                </label>
-                <span className="text-primary bg-primary-fixed/60 rounded-full px-2 py-0.5 text-label-status font-headline uppercase">
-                  {venue.trim() ? "Selected" : "Required"}
-                </span>
-              </div>
-
-              <div className="relative flex items-center">
-                <Icon
-                  name="search"
-                  size={20}
-                  className="text-on-surface-variant pointer-events-none absolute left-3.5"
-                />
-                <input
-                  id="venue"
-                  type="text"
-                  value={venue}
-                  onChange={(e) => setVenue(e.target.value)}
-                  placeholder="Cafe, bar, someone's flat…"
-                  className="bg-surface-container-low text-on-surface focus:bg-surface-container-lowest focus:border-primary-container w-full rounded-lg border-2 border-ink py-3 pr-10 pl-10 text-body-lg transition-colors focus:outline-none"
-                />
-                {venue && (
-                  <button
-                    type="button"
-                    aria-label="Clear location"
-                    onClick={() => setVenue("")}
-                    className="bg-secondary-container text-on-secondary-container absolute right-3 flex h-6 w-6 items-center justify-center rounded-full transition-transform active:scale-90"
-                  >
-                    <Icon name="close" size={15} />
-                  </button>
-                )}
-              </div>
-
-              <div className="bg-surface-container relative h-36 w-full overflow-hidden rounded-lg border-2 border-ink">
-                <MiniMap />
-                <div className="from-inverse-surface/60 absolute inset-0 flex items-end justify-between bg-gradient-to-t via-transparent to-transparent p-2.5">
-                  <span className="bg-surface-container-lowest/95 text-on-surface sticker-xs flex items-center gap-1.5 rounded-full border border-ink px-2.5 py-1 text-label-status font-headline backdrop-blur-sm">
-                    <span className="bg-primary-container h-2 w-2 animate-ping rounded-full" />
-                    {venue.trim() || "No spot picked yet"}
-                  </span>
-                </div>
-              </div>
-            </StickerCard>
+            <VenuePicker value={spot} onChange={setSpot} />
 
             {/* ── When ─────────────────────────────────────────── */}
             <StickerCard className="flex flex-col gap-3 p-4">
@@ -331,26 +285,5 @@ function TimeChip({
         {sub}
       </span>
     </button>
-  );
-}
-
-/** Tiny decorative map for the venue preview. */
-function MiniMap() {
-  return (
-    <svg aria-hidden className="h-full w-full" viewBox="0 0 320 150">
-      <rect width="320" height="150" fill="#efe9e0" />
-      <rect x="12" y="92" width="80" height="50" rx="8" fill="#dbe7d4" />
-      <g fill="#e4dcd1">
-        <rect x="112" y="14" width="96" height="54" rx="5" />
-        <rect x="228" y="78" width="80" height="60" rx="5" />
-      </g>
-      <g stroke="#fbf8f3" strokeLinecap="square">
-        <path d="M0 76 H320" strokeWidth="11" />
-        <path d="M104 0 V150" strokeWidth="11" />
-        <path d="M220 0 V150" strokeWidth="6" />
-      </g>
-      <path d="M0 76 H320" stroke="#e8c9a0" strokeWidth="1.2" strokeDasharray="8 7" />
-      <circle cx="160" cy="70" r="7" fill="#ff5a1f" stroke="#141414" strokeWidth="2" />
-    </svg>
   );
 }

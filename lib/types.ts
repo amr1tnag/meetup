@@ -51,6 +51,9 @@ export type Meetup = {
   whenLabel: string;
   startsAt: string;
   createdAt: string;
+  /** Real venue location, when the host picked a search result. */
+  venueLat: number | null;
+  venueLng: number | null;
 };
 
 export type Participant = {
@@ -99,6 +102,8 @@ export function toMeetup(r: any): Meetup {
     whenLabel: r.when_label,
     startsAt: r.starts_at,
     createdAt: r.created_at,
+    venueLat: r.venue_lat ?? null,
+    venueLng: r.venue_lng ?? null,
   };
 }
 
@@ -138,12 +143,9 @@ export function toPreviewPerson(r: any): PreviewPerson {
 
 /* ── Derivations ──────────────────────────────────────────────────
    Nobody streams GPS. People tell the app "I've left, ~15 min", and
-   everything live — the countdown, the pin gliding toward the venue,
-   flipping to "late" once the ETA passes — is derived from left_at
-   and eta_at against the current clock.                           */
-
-/** Where the venue pin sits on the map canvas, in percent. */
-export const VENUE_PIN = { x: 52, y: 48 } as const;
+   everything live — the countdown, the badge orbiting in toward the
+   venue, flipping to "late" once the ETA passes — is derived from
+   left_at and eta_at against the current clock.                    */
 
 /**
  * Whole minutes left until this person's ETA, or null if unknown.
@@ -169,37 +171,33 @@ export function liveStatus(p: Participant, nowMs: number | null): Status {
   return p.status;
 }
 
-/** Stable small offset per person so arrivals don't stack on one spot. */
-function jitter(id: string): { dx: number; dy: number } {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return { dx: ((h & 0xff) / 255 - 0.5) * 14, dy: (((h >> 8) & 0xff) / 255 - 0.5) * 10 };
-}
-
-/** Estimated marker position: start → venue across the travel window. */
-export function pinPosition(
+/**
+ * Where a friend's badge sits around the venue pin, as a pixel offset
+ * from it. Distance encodes time, not geography: arrived friends huddle
+ * at the pin, people en route sit further out the longer their ETA, and
+ * anyone who hasn't left waits on the outer ring. As a countdown runs
+ * down the badge glides inward. Positions are spread across the lower
+ * arc so the venue header card at the top of the map stays clear.
+ */
+export function orbitOffset(
   p: Participant,
+  index: number,
+  count: number,
   nowMs: number | null,
-): { x: number; y: number } {
-  const { dx, dy } = jitter(p.id);
+  /** Shrinks the whole orbit to fit shorter maps. */
+  scale = 1,
+): { dx: number; dy: number } {
+  const status = liveStatus(p, nowMs);
+  const eta = etaMinutes(p, nowMs);
 
-  if (p.status === "arrived") {
-    return { x: VENUE_PIN.x + dx, y: VENUE_PIN.y + 8 + Math.abs(dy) };
-  }
-  if (!p.leftAt || !p.etaAt || nowMs === null) {
-    return { x: p.startX, y: p.startY };
-  }
+  let r: number;
+  if (status === "arrived") r = 34;
+  else if (status === "idle" || eta === null) r = 118;
+  else r = 50 + Math.min(eta, 25) * 2.6; // 50px at the door … 115px at 25+ min
 
-  const start = new Date(p.leftAt).getTime();
-  const end = new Date(p.etaAt).getTime();
-  const span = Math.max(end - start, 60_000);
-  // Stop short of the pin until they actually tap "arrived".
-  const t = Math.min(Math.max((nowMs - start) / span, 0), 0.85);
-
-  return {
-    x: p.startX + (VENUE_PIN.x + dx - p.startX) * t,
-    y: p.startY + (VENUE_PIN.y + dy - p.startY) * t,
-  };
+  const deg = count <= 1 ? 90 : -20 + (index * 220) / (count - 1);
+  const rad = (deg * Math.PI) / 180;
+  return { dx: Math.cos(rad) * r * 1.25 * scale, dy: Math.sin(rad) * r * 0.8 * scale };
 }
 
 /* ── Formatting ───────────────────────────────────────────────── */

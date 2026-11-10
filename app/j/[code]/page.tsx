@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AppHeader, Shell } from "@/components/AppHeader";
 import { Icon } from "@/components/Icon";
 import { Avatar, PrimaryButton, Pill, PrivacyNote, StickerCard } from "@/components/ui";
+import { VenueMap } from "@/components/VenueMap";
 import { useToast } from "@/components/Toast";
 import { joinMeetup, useRoom } from "@/lib/room";
 import { useNow } from "@/lib/useNow";
@@ -130,9 +131,21 @@ function JoinScreen() {
               </div>
             </div>
 
-            <div className="bg-surface-container relative mb-3 h-28 w-full overflow-hidden rounded-xl border-2 border-ink">
-              <VenueStrip />
-              <div className="pointer-events-none absolute right-2 bottom-2 left-2 flex items-center justify-between gap-2">
+            <div className="bg-surface-container relative isolate mb-3 h-36 w-full overflow-hidden rounded-xl border-2 border-ink">
+              {meetup.venueLat !== null && meetup.venueLng !== null ? (
+                <>
+                  <VenueMap lat={meetup.venueLat} lng={meetup.venueLng} zoom={15} />
+                  <div className="pointer-events-none absolute top-1/2 left-1/2 z-[500] -translate-x-1/2 -translate-y-full">
+                    <div className="bg-primary-container sticker-sm flex h-7 w-7 items-center justify-center rounded-full border-2 border-ink ring-4 ring-white/80">
+                      <Icon name="location_on" size={16} fill className="text-on-primary" />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <VenueStrip />
+              )}
+              {/* Tags sit at the top so OpenStreetMap's credit stays visible. */}
+              <div className="pointer-events-none absolute top-2 right-2 left-2 z-[600] flex items-center justify-between gap-2">
                 <span className="bg-surface-container-lowest/95 text-on-surface flex min-w-0 items-center gap-1 rounded-lg px-2.5 py-1 text-label-status font-headline backdrop-blur-md">
                   <Icon name="pin_drop" size={14} className="text-primary" />
                   <span className="truncate">{meetup.area}</span>
@@ -178,7 +191,8 @@ function JoinScreen() {
                     .slice(0, 2)
                     .map((p) => p.name)
                     .join(", ")}
-                  {roster.length > 2 && ` & ${roster.length - 2} others`}
+                  {roster.length > 2 &&
+                    ` & ${roster.length - 2} ${roster.length === 3 ? "other" : "others"}`}
                 </p>
                 <p className="text-on-surface-variant flex items-center gap-1 text-label-status font-headline">
                   <Icon name="navigation" size={13} className="text-primary" />

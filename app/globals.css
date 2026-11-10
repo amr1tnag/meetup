@@ -206,6 +206,22 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* ── OpenStreetMap tiles, warmed to sit inside the sticker palette ── */
+.venue-map .leaflet-container {
+  background: var(--color-surface-container);
+  font-family: var(--font-body);
+}
+.venue-map .leaflet-tile-pane {
+  filter: saturate(0.55) sepia(0.12) brightness(1.04);
+}
+.venue-map .leaflet-control-attribution {
+  background: rgb(255 255 255 / 0.8);
+  font-size: 9px;
+  line-height: 1.4;
+  padding: 0 4px;
+  border-top-left-radius: 6px;
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;

@@ -6,97 +6,125 @@ import {
   etaMinutes,
   initials,
   liveStatus,
-  pinPosition,
+  orbitOffset,
 } from "@/lib/types";
 import { Icon } from "./Icon";
+import { VenueMap } from "./VenueMap";
 
 /**
- * A self-contained stylised map.
+ * The live map: a real OpenStreetMap view of the venue when the room has
+ * coordinates, or the drawn street grid when it doesn't (older rooms, or a
+ * venue typed without picking a search result).
  *
- * The Stitch export pointed at expiring Google-hosted static map tiles, so the
- * backdrop is drawn locally instead. Pins are *estimated*: each person glides
- * from their start toward the venue across the ETA they reported. Swap
- * `pinPosition` for real coordinates when GPS sharing lands.
+ * Friends are not plotted at street positions — nobody shares GPS. They
+ * orbit the venue pin, closer the sooner they'll arrive (see orbitOffset).
  */
 export function MapCanvas({
   participants,
   venue,
+  lat,
+  lng,
   now,
   height = 288,
   children,
 }: {
   participants: Participant[];
   venue: string;
+  lat: number | null;
+  lng: number | null;
   now: number | null;
   height?: number;
   children?: React.ReactNode;
 }) {
+  const hasCoords = lat !== null && lng !== null;
+
+  // The venue header card covers the top ~72px and the pin stands ~52px tall,
+  // so the venue point must sit at least ~130px down. On short maps, push it
+  // below centre (the real map shifts with it), then shrink the orbit to the
+  // room left underneath.
+  const offsetY = Math.max(0, 130 - height / 2);
+  const roomBelow = height - (height / 2 + offsetY) - 22;
+  const scale = Math.min(1, Math.max(0.25, roomBelow / 95));
+  const anchorTop = `calc(50% + ${offsetY}px)`;
+
   return (
     <div
-      className="bg-surface-container-high sticker relative w-full overflow-hidden rounded-sticker border-2 border-ink"
+      className="bg-surface-container-high sticker relative isolate w-full overflow-hidden rounded-sticker border-2 border-ink"
       style={{ height }}
     >
-      <StreetGrid />
+      {hasCoords ? <VenueMap lat={lat} lng={lng} offsetY={offsetY} /> : <StreetGrid />}
 
-      {/* Destination pin */}
-      <div className="pointer-events-none absolute top-[48%] left-[52%] z-20 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center">
-        <div className="bg-primary text-on-primary sticker-sm mb-1 rounded-lg border-2 border-ink px-2 py-0.5 text-[11px] font-headline whitespace-nowrap">
-          📍 {venue}
+      {/* Everything below is centred on the venue point. Leaflet's panes sit
+          at z-index 400+, so the overlay layer goes above them. */}
+      <div className="pointer-events-none absolute inset-0 z-[500]">
+        {/* Venue pin */}
+        <div
+          className="absolute left-1/2 z-20 flex -translate-x-1/2 -translate-y-full flex-col items-center"
+          style={{ top: anchorTop }}
+        >
+          <div className="bg-primary text-on-primary sticker-sm mb-1 max-w-[160px] truncate rounded-lg border-2 border-ink px-2 py-0.5 text-[11px] font-headline whitespace-nowrap">
+            📍 {venue}
+          </div>
+          <div className="bg-primary-container text-on-primary sticker-sm flex h-7 w-7 items-center justify-center rounded-full border-2 border-ink ring-4 ring-white/80">
+            <Icon name="celebration" size={16} />
+          </div>
         </div>
-        <div className="bg-primary-container text-on-primary sticker-sm flex h-7 w-7 animate-pulse items-center justify-center rounded-full border-2 border-ink ring-4 ring-white/80">
-          <Icon name="celebration" size={16} />
-        </div>
-      </div>
 
-      {/* Friend markers */}
-      {participants.map((p) => {
-        const pos = pinPosition(p, now);
-        const status = liveStatus(p, now);
-        const eta = etaMinutes(p, now);
+        {/* Friends in orbit */}
+        {participants.map((p, i) => {
+          const { dx, dy } = orbitOffset(p, i, participants.length, now, scale);
+          const status = liveStatus(p, now);
+          const eta = etaMinutes(p, now);
 
-        return (
-          <div
-            key={p.id}
-            className="absolute z-20 -translate-x-1/2 -translate-y-1/2 transition-all duration-[1500ms] ease-out"
-            style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
-          >
-            <div className="flex flex-col items-center">
-              {status === "late" ? (
-                <span className="bg-error text-on-error sticker-xs mb-0.5 rounded-md border border-ink px-1.5 py-0.5 text-[9px] font-headline whitespace-nowrap">
-                  Late
-                </span>
-              ) : eta !== null && eta > 0 ? (
-                <span className="bg-surface-container-lowest text-on-surface sticker-xs mb-0.5 rounded-md border border-ink px-1.5 py-0.5 text-[9px] font-headline whitespace-nowrap">
-                  {eta} min
-                </span>
-              ) : null}
+          return (
+            <div
+              key={p.id}
+              className="absolute z-10 -translate-x-1/2 -translate-y-1/2 transition-[left,top] duration-[1500ms] ease-out"
+              style={{ left: `calc(50% + ${dx}px)`, top: `calc(50% + ${offsetY + dy}px)` }}
+            >
+              <div className={`flex flex-col items-center ${status === "idle" ? "opacity-75" : ""}`}>
+                {status === "late" ? (
+                  <span className="bg-error text-on-error sticker-xs mb-0.5 rounded-md border border-ink px-1.5 py-0.5 text-[9px] font-headline whitespace-nowrap">
+                    Late
+                  </span>
+                ) : status === "moving" && eta !== null ? (
+                  <span className="bg-surface-container-lowest text-on-surface sticker-xs mb-0.5 rounded-md border border-ink px-1.5 py-0.5 text-[9px] font-headline whitespace-nowrap">
+                    {eta > 0 ? `${eta} min` : "now"}
+                  </span>
+                ) : null}
 
-              <div
-                className="sticker-sm relative flex h-8 w-8 items-center justify-center rounded-full border-2 border-ink text-label-md font-headline text-ink"
-                style={{ backgroundColor: p.tint }}
-              >
-                {initials(p.name)}
-                <span
-                  className="absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full border border-ink"
-                  style={{ backgroundColor: STATUS_META[status].dot }}
-                />
+                <div
+                  className="sticker-sm relative flex h-8 w-8 items-center justify-center rounded-full border-2 border-ink text-label-md font-headline text-ink"
+                  style={{ backgroundColor: p.tint }}
+                >
+                  {initials(p.name)}
+                  <span
+                    className="absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full border border-ink"
+                    style={{ backgroundColor: STATUS_META[status].dot }}
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
 
-      {children}
+        {participants.length > 1 && (
+          <span className="bg-surface-container-lowest/90 text-on-surface-variant absolute bottom-2 left-2 rounded-full border border-ink px-2 py-0.5 text-[10px] font-headline">
+            Closer to the pin = arriving sooner
+          </span>
+        )}
+      </div>
 
-      <span className="bg-surface-container-lowest/90 text-on-surface-variant absolute bottom-3 left-3 z-30 rounded-full border border-ink px-2 py-0.5 text-[10px] font-headline">
-        Estimated from ETAs
-      </span>
+      {/* Caller overlays (the venue header card) sit above everything. */}
+      <div className="pointer-events-none absolute inset-0 z-[600] [&>*]:pointer-events-auto">
+        {children}
+      </div>
     </div>
   );
 }
 
-/** Warm, abstract street grid — no external tiles, no expiry. */
-function StreetGrid() {
+/** Warm, abstract street grid for rooms without a real location. */
+export function StreetGrid() {
   return (
     <svg
       aria-hidden

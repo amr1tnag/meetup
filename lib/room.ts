@@ -276,6 +276,9 @@ export async function createMeetup(input: {
   whenLabel: string;
   minutesFromNow: number;
   hostName: string;
+  /** From a picked search result; both or neither. */
+  lat: number | null;
+  lng: number | null;
 }): Promise<string> {
   await ensureSession();
   const { data, error } = await getSupabase().rpc("create_meetup", {
@@ -284,6 +287,8 @@ export async function createMeetup(input: {
     p_when_label: input.whenLabel,
     p_minutes_from_now: input.minutesFromNow,
     p_host_name: input.hostName,
+    p_lat: input.lat,
+    p_lng: input.lng,
   });
   if (error) throw new Error(friendlyError(error));
   return data as string;

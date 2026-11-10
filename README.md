@@ -12,6 +12,7 @@ token translation.
 - **Next.js 16** (App Router, Turbopack, Cache Components) + **React 19**
 - **Tailwind CSS v4** — design tokens in `app/globals.css` under `@theme`
 - **Supabase** — Postgres, anonymous auth, Row Level Security, Realtime
+- **OpenStreetMap** — Photon place search, Leaflet map tiles (no API keys)
 - **TypeScript**
 
 ## Running it
@@ -66,10 +67,12 @@ push doesn't weaken anything. Keep it that way when editing.
 
 ```
 app/                 routes (client components)
-components/          AppHeader, MapCanvas, LiveTracker, WaitingState, EtaSheet, Toast, ui
+components/          AppHeader, MapCanvas, VenueMap, VenuePicker, LiveTracker,
+                     WaitingState, EtaSheet, Toast, ui
+lib/geocode.ts       Photon place search + directions link
 lib/supabase.ts      lazy browser client + anonymous session
 lib/room.ts          useRoom (member/preview + Realtime), useMyRooms, writes
-lib/types.ts         domain shapes, row mappers, ETA/pin/late derivations
+lib/types.ts         domain shapes, row mappers, ETA/orbit/late derivations
 lib/useNow.ts        clock and origin as external stores
 supabase/            config.toml + migrations
 design/              where the UI came from
@@ -88,13 +91,30 @@ design/              where the UI came from
   columns (column-level grants). Creating rooms, joining and nudging go through
   RPCs.
 
+### Maps and place search
+
+The venue is real; friends' positions are not.
+
+- **Place search** (`lib/geocode.ts`) queries [Photon](https://photon.komoot.io),
+  an OpenStreetMap geocoder built for search-as-you-type, straight from the
+  browser. Typing is debounced and results are cached. Picking a result stores
+  the venue's coordinates on the meetup (`venue_lat`/`venue_lng`). Venues used
+  "without a map" have no coordinates and get the drawn street grid instead.
+- **The map** (`components/VenueMap.tsx`) is Leaflet with OpenStreetMap tiles,
+  centred on the venue and deliberately non-interactive. "Open maps" hands off
+  to the phone's maps app with the exact coordinates. The © OpenStreetMap
+  credit must stay visible; overlays are kept away from the bottom-right corner.
+
 ### Live updates without GPS
 
 Tapping "I've left" records `left_at` and a self-reported `eta_at`. Everything
 live is derived from those two timestamps and the clock (`lib/types.ts`): the
-countdown, the pin gliding toward the venue, and flipping to "late" once the
-ETA passes. The map says "Estimated from ETAs" so no one mistakes it for real
-location.
+countdown, flipping to "late" once the ETA passes, and each friend's place on
+the map. Friends *orbit* the venue pin (`orbitOffset`): arrived friends huddle
+at the pin, people en route sit further out the longer their ETA and glide in
+as it counts down, and anyone who hasn't left waits on the outer ring. Distance
+on the map means time, not geography, and the map says so ("Closer to the pin =
+arriving sooner").
 
 ### Patterns to keep
 
@@ -112,7 +132,10 @@ location.
 
 ## Known gaps
 
-- **No real location.** Pins are estimates from ETAs.
+- **No real location for friends.** The orbit shows ETA, not where anyone is.
+- **Place search is fair-use and literal.** Photon's free public instance asks
+  for light use, and it doesn't correct typos ("thurbe" won't find Turbhe).
+  For heavy traffic, self-host Photon or move to a paid geocoder.
 - **Anonymous sign-ins are unprotected against abuse.** Supabase rate-limits
   them per IP (30/hour). Add CAPTCHA (Turnstile/hCaptcha) before a public launch.
 - **Rooms never expire.** Nothing deletes old meetups yet.

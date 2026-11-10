@@ -59,9 +59,13 @@ utility.
 ## Deliberate deviations
 
 - **Map tiles.** The Stitch screens hotlinked Google-hosted static map images on
-  `lh3.googleusercontent.com`, which expire. They're replaced by a locally drawn
-  SVG street grid in `components/MapCanvas.tsx`. Swap it for Mapbox or Google
-  Static Maps when real positions land.
+  `lh3.googleusercontent.com`, which expire. They're replaced by real
+  OpenStreetMap tiles (Leaflet) centred on the venue the host searched for,
+  tinted toward the sticker palette. The drawn SVG street grid remains only as
+  the fallback for venues with no coordinates.
+- **Friend pins orbit the venue** instead of sitting at street positions. The
+  design implied live GPS; this app has none, so distance from the pin encodes
+  ETA. The design's "Slow traffic" pin label became a plain "Late".
 - **Logo.** Also a hotlinked asset; replaced with an inline pin mark in
   `components/AppHeader.tsx`.
 - **Recap numbers.** The design showed fixed figures (51 min wait, "avg 42

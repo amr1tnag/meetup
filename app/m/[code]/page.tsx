@@ -13,6 +13,7 @@ import { useToast } from "@/components/Toast";
 import { GhostButton, PrimaryButton, StickerCard } from "@/components/ui";
 import { arriveNow, leaveNow, runLate, sendNudge, useRoom } from "@/lib/room";
 import { useNow, useOrigin } from "@/lib/useNow";
+import { directionsUrl } from "@/lib/geocode";
 import { type Participant, liveStatus, minutesUntil } from "@/lib/types";
 
 export default function LiveMeetupPage() {
@@ -213,8 +214,10 @@ function LiveMeetupScreen() {
           <MapCanvas
             participants={participants}
             venue={meetup.venue}
+            lat={meetup.venueLat}
+            lng={meetup.venueLng}
             now={now}
-            height={soloRoom ? 176 : 288}
+            height={soloRoom ? 200 : 300}
           >
             <div
               className="bg-surface-container-lowest sticker absolute top-3 right-3 left-3 z-30 flex items-center justify-between gap-2 rounded-2xl border-2 border-ink px-3 py-2"
@@ -309,7 +312,7 @@ function LiveMeetupScreen() {
             )}
 
             <a
-              href={`https://maps.google.com/?q=${encodeURIComponent(meetup.area || meetup.venue)}`}
+              href={directionsUrl(meetup)}
               target="_blank"
               rel="noopener noreferrer"
               className="bg-surface-container-lowest text-on-surface sticker-sm press flex min-h-[44px] items-center justify-center gap-1.5 rounded-2xl border-2 border-ink px-3 text-label-md font-headline"
