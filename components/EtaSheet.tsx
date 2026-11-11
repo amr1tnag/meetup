@@ -49,6 +49,7 @@ export function EtaSheet({
             <button
               key={m}
               type="button"
+              aria-label={`${m} minutes`}
               disabled={busy}
               onClick={() => onPick(m)}
               className="bg-tertiary-fixed text-on-tertiary-fixed sticker-sm press flex flex-col items-center rounded-xl border-2 border-ink py-3 font-headline disabled:opacity-60"
