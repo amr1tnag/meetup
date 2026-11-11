@@ -7,6 +7,7 @@ import { AppHeader, Shell } from "@/components/AppHeader";
 import { Icon } from "@/components/Icon";
 import { Avatar, PrimaryButton, Pill, PrivacyNote, StickerCard } from "@/components/ui";
 import { VenueMap } from "@/components/VenueMap";
+import { SpotPin } from "@/components/VenuePicker";
 import { useToast } from "@/components/Toast";
 import { joinMeetup, useRoom } from "@/lib/room";
 import { useNow } from "@/lib/useNow";
@@ -133,14 +134,16 @@ function JoinScreen() {
 
             <div className="bg-surface-container relative isolate mb-3 h-36 w-full overflow-hidden rounded-xl border-2 border-ink">
               {meetup.venueLat !== null && meetup.venueLng !== null ? (
-                <>
-                  <VenueMap lat={meetup.venueLat} lng={meetup.venueLng} zoom={15} />
-                  <div className="pointer-events-none absolute top-1/2 left-1/2 z-[500] -translate-x-1/2 -translate-y-full">
-                    <div className="bg-primary-container sticker-sm flex h-7 w-7 items-center justify-center rounded-full border-2 border-ink ring-4 ring-white/80">
-                      <Icon name="location_on" size={16} fill className="text-on-primary" />
-                    </div>
-                  </div>
-                </>
+                <VenueMap
+                  fit={[[meetup.venueLat, meetup.venueLng]]}
+                  padding={{ top: 56, right: 24, bottom: 24, left: 24 }}
+                  maxZoom={15}
+                >
+                  {(project) => {
+                    const pt = project(meetup.venueLat!, meetup.venueLng!);
+                    return pt ? <SpotPin x={pt.x} y={pt.y} /> : null;
+                  }}
+                </VenueMap>
               ) : (
                 <VenueStrip />
               )}
@@ -298,7 +301,8 @@ function JoinScreen() {
 
               <div className="mt-3">
                 <PrivacyNote>
-                  No GPS: friends only see the ETA you choose, and only inside this room.
+                  Location is shared only if you turn it on, only with this room, and erased
+                  when you arrive.
                 </PrivacyNote>
               </div>
             </StickerCard>

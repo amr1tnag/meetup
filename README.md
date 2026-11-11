@@ -1,7 +1,8 @@
 # Meet up
 
 A mobile-first group coordination app: create a room, share one link, and watch
-the whole group close in on the spot. No installs, no accounts, no GPS.
+the whole group close in on the spot — live GPS if you opt in, an ETA if you
+don't. No installs, no accounts.
 
 The UI is ported from the Google Stitch project **“Meet Up Group Tracker.”** See
 [`design/README.md`](design/README.md) for the screen-by-screen mapping and the
@@ -70,6 +71,8 @@ app/                 routes (client components)
 components/          AppHeader, MapCanvas, VenueMap, VenuePicker, LiveTracker,
                      WaitingState, EtaSheet, Toast, ui
 lib/geocode.ts       Photon place search + directions link
+lib/geo.ts           distance, travel time, freshness
+lib/useLocationSharing.ts  opt-in GPS: watch, publish, auto leave/arrive
 lib/supabase.ts      lazy browser client + anonymous session
 lib/room.ts          useRoom (member/preview + Realtime), useMyRooms, writes
 lib/types.ts         domain shapes, row mappers, ETA/orbit/late derivations
@@ -93,28 +96,49 @@ design/              where the UI came from
 
 ### Maps and place search
 
-The venue is real; friends' positions are not.
-
 - **Place search** (`lib/geocode.ts`) queries [Photon](https://photon.komoot.io),
   an OpenStreetMap geocoder built for search-as-you-type, straight from the
   browser. Typing is debounced and results are cached. Picking a result stores
   the venue's coordinates on the meetup (`venue_lat`/`venue_lng`). Venues used
   "without a map" have no coordinates and get the drawn street grid instead.
 - **The map** (`components/VenueMap.tsx`) is Leaflet with OpenStreetMap tiles,
-  centred on the venue and deliberately non-interactive. "Open maps" hands off
+  non-interactive, framing the venue plus everyone sharing GPS. Callers draw
+  pins in React through a `project(lat, lng)` render prop. "Open maps" hands off
   to the phone's maps app with the exact coordinates. The © OpenStreetMap
   credit must stay visible; overlays are kept away from the bottom-right corner.
 
-### Live updates without GPS
+### Live GPS location
 
-Tapping "I've left" records `left_at` and a self-reported `eta_at`. Everything
-live is derived from those two timestamps and the clock (`lib/types.ts`): the
-countdown, flipping to "late" once the ETA passes, and each friend's place on
-the map. Friends *orbit* the venue pin (`orbitOffset`): arrived friends huddle
-at the pin, people en route sit further out the longer their ETA and glide in
-as it counts down, and anyone who hasn't left waits on the outer ring. Distance
-on the map means time, not geography, and the map says so ("Closer to the pin =
-arriving sooner").
+Sharing is opt-in per person and per room (`lib/useLocationSharing.ts`). While
+it's on and the room is open:
+
+- the browser's `watchPosition` feeds fixes, published at most every 15 s
+  (sooner after moving 30 m) into the participant's own row;
+- moving 150 m from where sharing started flips you to "on the way";
+- coming within ~80 m of the venue marks you arrived and stops the watch;
+- an optional screen wake lock keeps the phone from sleeping mid-trip.
+
+Distance and a rough travel time come from `lib/geo.ts` (reported speed, or a
+~20 km/h city average). A position older than 2 minutes shows as "last seen".
+
+**Privacy is enforced by the database, not the client.** Positions are readable
+only by room members (existing RLS). A trigger erases a position the moment its
+owner is marked arrived, a `pg_cron` job clears any position not updated for 3
+hours, and "Stop sharing" erases it immediately. Only the latest fix is stored,
+never a trail.
+
+**Web limitation:** browsers stop delivering location to a page in the
+background, so sharing only runs while the room is open on screen. Background
+tracking would need a native app.
+
+### ETA fallback
+
+People who can't or won't share location tap "Use an ETA": that records
+`left_at` and a self-reported `eta_at`, and the countdown and "late" flag derive
+from those. With nobody sharing GPS, everyone *orbits* the venue pin by ETA
+(`orbitOffset`): closer means arriving sooner. Once anyone shares, the map turns
+purely geographic: live dots at real spots, arrived friends at the pin, and
+anyone else in a "not sharing location" strip, not at a made-up distance.
 
 ### Patterns to keep
 
@@ -132,7 +156,8 @@ arriving sooner").
 
 ## Known gaps
 
-- **No real location for friends.** The orbit shows ETA, not where anyone is.
+- **Location only updates while the room is open on screen.** A web limit; see
+  "Live GPS location".
 - **Place search is fair-use and literal.** Photon's free public instance asks
   for light use, and it doesn't correct typos ("thurbe" won't find Turbhe).
   For heavy traffic, self-host Photon or move to a paid geocoder.

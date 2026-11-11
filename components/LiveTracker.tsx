@@ -8,15 +8,25 @@ import {
   etaMinutes,
   liveStatus,
 } from "@/lib/types";
+import {
+  type LatLng,
+  ago,
+  distanceM,
+  formatDistance,
+  isStale,
+  travelMinutes,
+} from "@/lib/geo";
 
 export function LiveTracker({
   participants,
+  venue,
   myId,
   now,
   nudgeCounts,
   onNudge,
 }: {
   participants: Participant[];
+  venue: LatLng | null;
   myId: string;
   now: number | null;
   nudgeCounts: Record<string, number>;
@@ -51,6 +61,7 @@ export function LiveTracker({
           <FriendRow
             key={p.id}
             participant={p}
+            venue={venue}
             isMe={p.id === myId}
             now={now}
             nudges={nudgeCounts[p.id] ?? 0}
@@ -64,12 +75,14 @@ export function LiveTracker({
 
 function FriendRow({
   participant: p,
+  venue,
   isMe,
   now,
   nudges,
   onNudge,
 }: {
   participant: Participant;
+  venue: LatLng | null;
   isMe: boolean;
   now: number | null;
   nudges: number;
@@ -112,7 +125,9 @@ function FriendRow({
       </div>
 
       <div className="flex shrink-0 flex-col items-end gap-1 text-right">
-        {status === "arrived" ? (
+        {status !== "arrived" && p.lat !== null && p.lng !== null ? (
+          <GpsReadout p={{ ...p, lat: p.lat, lng: p.lng }} venue={venue} now={now} />
+        ) : status === "arrived" ? (
           <>
             <p className="text-on-surface text-body-sm font-semibold">
               here since {p.arrivedAt ? clockTime(p.arrivedAt) : "just now"}
@@ -172,5 +187,42 @@ function NudgeButton({
       </span>
       <Icon name="notifications" size={14} fill className="text-primary" />
     </button>
+  );
+}
+
+/** Right-hand side of a row for someone sharing live GPS. */
+function GpsReadout({
+  p,
+  venue,
+  now,
+}: {
+  p: Participant & { lat: number; lng: number };
+  venue: LatLng | null;
+  now: number | null;
+}) {
+  const stale = isStale(p.locatedAt, now);
+  const d = venue ? distanceM(p, venue) : null;
+
+  return (
+    <>
+      <p
+        className={`sticker-xs rounded-lg border border-ink px-2 py-0.5 text-body-sm font-bold text-ink ${
+          stale ? "bg-surface-container-high" : "bg-tertiary-fixed"
+        }`}
+      >
+        {d !== null
+          ? `${formatDistance(d)} · ~${travelMinutes(d, p.speedMps)} min`
+          : "sharing location"}
+      </p>
+      <p className="text-on-surface-variant flex items-center gap-1 text-[11px] font-headline">
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${stale ? "" : "animate-pulse"}`}
+          style={{
+            backgroundColor: stale ? "var(--color-status-idle)" : "var(--color-status-arrived)",
+          }}
+        />
+        {stale || !p.locatedAt ? `last seen ${ago(p.locatedAt ?? "", now)}` : "live GPS"}
+      </p>
+    </>
   );
 }

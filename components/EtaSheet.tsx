@@ -6,8 +6,8 @@ import { GhostButton } from "./ui";
 const OPTIONS = [5, 10, 15, 20, 30, 45] as const;
 
 /**
- * "How long will you be?" — the one number that drives everyone's
- * countdown and your estimated pin on the map. No GPS needed.
+ * "How long will you be?" — the fallback for people who don't share live
+ * location. This one number drives their countdown and orbit on the map.
  */
 export function EtaSheet({
   onPick,

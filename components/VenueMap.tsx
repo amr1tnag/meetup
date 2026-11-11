@@ -1,58 +1,80 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Map as LeafletMap } from "leaflet";
 
-/** Put the venue `offsetY` px below centre: aim the centre that far above it. */
-function centreOn(m: LeafletMap, lat: number, lng: number, zoom: number, offsetY: number) {
-  const venuePx = m.project([lat, lng], zoom);
-  m.setView(m.unproject(venuePx.subtract([0, offsetY]), zoom), zoom, { animate: false });
+export type Project = (lat: number, lng: number) => { x: number; y: number } | null;
+
+type Padding = { top: number; right: number; bottom: number; left: number };
+type FitSpec = { fit: [number, number][]; padding: Padding; maxZoom: number };
+
+/** Frame all points inside the padding; a single point gets `maxZoom`. */
+function frame(m: LeafletMap, spec: FitSpec, animate: boolean) {
+  if (spec.fit.length === 0) return;
+  const p = spec.padding;
+  m.fitBounds(spec.fit, {
+    paddingTopLeft: [p.left, p.top],
+    paddingBottomRight: [p.right, p.bottom],
+    maxZoom: spec.maxZoom,
+    animate,
+  });
 }
 
 /**
- * A real OpenStreetMap backdrop centred on the venue.
+ * A real OpenStreetMap backdrop that frames a set of points — the venue,
+ * plus anyone sharing live location — inside the given padding.
  *
- * Deliberately non-interactive: it shows *where* the spot is, and the
- * venue pin and friend badges are drawn on top by the caller, centred
- * over the same point. "Open maps" is the way to actually navigate.
+ * Non-interactive on purpose: it shows *where*, and "Open maps" is for
+ * navigating. Callers draw their own pins in React via `children(project)`,
+ * which turns a lat/lng into a pixel position on this map and re-renders as
+ * the view changes.
  *
- * Leaflet reads `window` on import, so it loads inside an effect and
- * never runs during server rendering or the prerender.
+ * Leaflet reads `window` on import, so it loads inside an effect and never
+ * runs during server rendering or the prerender.
  */
 export function VenueMap({
-  lat,
-  lng,
-  zoom = 16,
-  offsetY = 0,
-  className = "",
+  fit,
+  padding = { top: 24, right: 24, bottom: 24, left: 24 },
+  maxZoom = 16,
+  children,
 }: {
-  lat: number;
-  lng: number;
-  zoom?: number;
-  /**
-   * Show the venue this many px below the map's centre, so a header card
-   * over the top of the map doesn't cover it. Overlays drawn by the caller
-   * must use the same offset.
-   */
-  offsetY?: number;
-  className?: string;
+  fit: [number, number][];
+  padding?: Padding;
+  maxZoom?: number;
+  children?: (project: Project) => ReactNode;
 }) {
   const el = useRef<HTMLDivElement>(null);
-  const map = useRef<LeafletMap | null>(null);
+  // In state, not a ref: render needs it to project overlay positions.
+  const [lmap, setLmap] = useState<LeafletMap | null>(null);
   const [ready, setReady] = useState(false);
+  const [, setViewTick] = useState(0);
+
+  // Only refit when the points or padding actually change.
+  const fitKey = useMemo(
+    () =>
+      fit.map(([a, b]) => `${a.toFixed(5)},${b.toFixed(5)}`).join("|") +
+      `|${padding.top},${padding.right},${padding.bottom},${padding.left},${maxZoom}`,
+    [fit, padding.top, padding.right, padding.bottom, padding.left, maxZoom],
+  );
+  const specRef = useRef<FitSpec>({ fit, padding, maxZoom });
+  useEffect(() => {
+    specRef.current = { fit, padding, maxZoom };
+  });
 
   // Create the map once.
   useEffect(() => {
     let cancelled = false;
+    let created: LeafletMap | null = null;
 
     (async () => {
       const L = (await import("leaflet")).default;
-      if (cancelled || !el.current || map.current) return;
+      if (cancelled || !el.current) return;
 
+      const spec = specRef.current;
       const m = L.map(el.current, {
-        center: [lat, lng],
-        zoom,
+        center: spec.fit[0] ?? [20.6, 78.9],
+        zoom: spec.maxZoom,
         zoomControl: false,
         dragging: false,
         touchZoom: false,
@@ -63,7 +85,6 @@ export function VenueMap({
         attributionControl: true,
       });
       m.attributionControl.setPrefix(false);
-      centreOn(m, lat, lng, zoom, offsetY);
 
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
@@ -75,30 +96,42 @@ export function VenueMap({
         })
         .addTo(m);
 
-      map.current = m;
+      // Re-render overlays whenever the view moves, including mid-animation.
+      m.on("move zoom resize", () => setViewTick((t) => t + 1));
+
+      frame(m, spec, false);
+      created = m;
+      setLmap(m);
     })();
 
     return () => {
       cancelled = true;
-      map.current?.remove();
-      map.current = null;
+      created?.remove();
+      setLmap(null);
     };
-    // Recentring is handled below; the map itself is created once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Follow a new venue (the create screen changes it as you pick).
+  // Reframe when someone moves, joins or stops sharing.
   useEffect(() => {
-    if (map.current) centreOn(map.current, lat, lng, zoom, offsetY);
-  }, [lat, lng, zoom, offsetY]);
+    if (lmap) frame(lmap, specRef.current, true);
+  }, [fitKey, lmap]);
+
+  const project: Project = (lat, lng) => {
+    if (!lmap) return null;
+    const pt = lmap.latLngToContainerPoint([lat, lng]);
+    return { x: pt.x, y: pt.y };
+  };
 
   return (
-    <div className={`venue-map absolute inset-0 ${className}`}>
+    <div className="venue-map absolute inset-0">
       <div ref={el} className="h-full w-full" />
       {!ready && (
         <div className="bg-surface-container text-on-surface-variant absolute inset-0 flex items-center justify-center text-label-md font-headline">
           Loading map…
         </div>
+      )}
+      {lmap && children && (
+        <div className="pointer-events-none absolute inset-0 z-[500]">{children(project)}</div>
       )}
     </div>
   );

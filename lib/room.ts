@@ -310,6 +310,11 @@ type StatusPatch = Partial<{
   left_at: string | null;
   eta_at: string | null;
   arrived_at: string | null;
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  speed_mps: number | null;
+  located_at: string | null;
 }>;
 
 async function updateMe(id: string, patch: StatusPatch): Promise<Participant> {
@@ -350,6 +355,43 @@ export function arriveNow(me: Participant) {
     status: "arrived",
     arrived_at: new Date().toISOString(),
     note: "at the table",
+  });
+}
+
+/**
+ * Publish my latest GPS fix. `leaving` also flips me to "on the way",
+ * which happens automatically once I've moved away from where I started.
+ */
+export function shareLocation(
+  me: Participant,
+  fix: { lat: number; lng: number; accuracy: number; speed: number | null; at: number },
+  leaving: boolean,
+) {
+  return updateMe(me.id, {
+    lat: fix.lat,
+    lng: fix.lng,
+    accuracy_m: Math.round(fix.accuracy),
+    speed_mps: fix.speed,
+    located_at: new Date(fix.at).toISOString(),
+    ...(leaving
+      ? {
+          status: "moving" as const,
+          left_at: new Date(fix.at).toISOString(),
+          eta_at: null,
+          note: "sharing live location",
+        }
+      : {}),
+  });
+}
+
+/** Stop sharing: erase my position from the room. */
+export function stopSharing(me: Participant) {
+  return updateMe(me.id, {
+    lat: null,
+    lng: null,
+    accuracy_m: null,
+    speed_mps: null,
+    located_at: null,
   });
 }
 

@@ -71,6 +71,12 @@ export type Participant = {
   startX: number;
   startY: number;
   joinedAt: string;
+  /** Live GPS position, only while this person is sharing. */
+  lat: number | null;
+  lng: number | null;
+  accuracyM: number | null;
+  speedMps: number | null;
+  locatedAt: string | null;
 };
 
 export type Nudge = {
@@ -123,6 +129,11 @@ export function toParticipant(r: any): Participant {
     startX: Number(r.start_x),
     startY: Number(r.start_y),
     joinedAt: r.joined_at,
+    lat: r.lat ?? null,
+    lng: r.lng ?? null,
+    accuracyM: r.accuracy_m ?? null,
+    speedMps: r.speed_mps ?? null,
+    locatedAt: r.located_at ?? null,
   };
 }
 
@@ -141,11 +152,11 @@ export function toPreviewPerson(r: any): PreviewPerson {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-/* ── Derivations ──────────────────────────────────────────────────
-   Nobody streams GPS. People tell the app "I've left, ~15 min", and
-   everything live — the countdown, the badge orbiting in toward the
-   venue, flipping to "late" once the ETA passes — is derived from
-   left_at and eta_at against the current clock.                    */
+/* ── ETA derivations ──────────────────────────────────────────────
+   For people not sharing GPS. They tell the app "I've left, ~15 min",
+   and the countdown, the badge orbiting in toward the venue, and
+   flipping to "late" once the ETA passes are all derived from left_at
+   and eta_at against the current clock. GPS maths lives in geo.ts.  */
 
 /**
  * Whole minutes left until this person's ETA, or null if unknown.

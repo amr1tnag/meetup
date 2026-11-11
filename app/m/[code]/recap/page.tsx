@@ -329,7 +329,7 @@ function RecapScreen() {
           {/* Stamp footer */}
           <div className="text-on-surface-variant flex items-center justify-between gap-2 pt-2 opacity-75">
             <span className="truncate text-label-status font-headline">meetup • #{meetup.code}</span>
-            <span className="shrink-0 text-label-status font-headline">No GPS used 🛡️</span>
+            <span className="shrink-0 text-label-status font-headline">Locations erased 🛡️</span>
           </div>
         </div>
 

@@ -14,6 +14,8 @@ import { GhostButton, PrimaryButton, StickerCard } from "@/components/ui";
 import { arriveNow, leaveNow, runLate, sendNudge, useRoom } from "@/lib/room";
 import { useNow, useOrigin } from "@/lib/useNow";
 import { directionsUrl } from "@/lib/geocode";
+import { distanceM, formatDistance, travelMinutes } from "@/lib/geo";
+import { useLocationSharing } from "@/lib/useLocationSharing";
 import { type Participant, liveStatus, minutesUntil } from "@/lib/types";
 
 export default function LiveMeetupPage() {
@@ -58,6 +60,23 @@ function LiveMeetupScreen() {
 
   const [etaOpen, setEtaOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const member = room.kind === "member" ? room : null;
+  const venuePoint =
+    member && member.meetup.venueLat !== null && member.meetup.venueLng !== null
+      ? { lat: member.meetup.venueLat, lng: member.meetup.venueLng }
+      : null;
+
+  const location = useLocationSharing({
+    code,
+    me: member?.me ?? null,
+    venue: venuePoint,
+    onWrite: applyLocal,
+    onArrived: (p) => {
+      applyLocal(p);
+      toast("You've arrived — your location was erased 🎊", "celebration");
+    },
+  });
 
   // Someone with the link who hasn't joined yet belongs on the invite screen.
   useEffect(() => {
@@ -164,29 +183,40 @@ function LiveMeetupScreen() {
     }
   }
 
+  // GPS is the default way to show progress; an ETA is the fallback for
+  // browsers without geolocation or people who'd rather not share.
+  const gpsAvailable = location.supported && location.state !== "denied";
+  const offerGps = me.status === "idle" && !location.sharing && gpsAvailable;
+
   function primaryAction() {
     if (busy) return;
-    if (me.status === "idle") {
-      setEtaOpen(true);
-    } else if (me.status === "moving" || me.status === "late") {
-      void write(() => arriveNow(me), `You arrived at ${meetup.venue} 🎊`, "celebration");
-    } else {
+    if (me.status === "arrived") {
       toast("You're already at the table 🍻", "check_circle");
+    } else if (me.status === "idle" && !location.sharing) {
+      if (gpsAvailable) location.start();
+      else setEtaOpen(true);
+    } else {
+      void write(() => arriveNow(me), `You arrived at ${meetup.venue} 🎊`, "celebration");
     }
   }
 
   const cta =
-    me.status === "idle"
-      ? { label: "I've left the house!", icon: "directions_run", color: "var(--color-primary-container)" }
-      : me.status === "arrived"
-        ? { label: "You're at the table! 🍻", icon: "check_circle", color: "var(--color-status-arrived)" }
-        : { label: "I've arrived! 🎉", icon: "sports_score", color: "var(--color-primary-container)" };
+    me.status === "arrived"
+      ? { label: "You're at the table! 🍻", icon: "check_circle", color: "var(--color-status-arrived)" }
+      : offerGps
+        ? { label: "Share my live location", icon: "my_location", color: "var(--color-primary-container)" }
+        : me.status === "idle" && !location.sharing
+          ? { label: "I've left the house!", icon: "directions_run", color: "var(--color-primary-container)" }
+          : { label: "I've arrived! 🎉", icon: "sports_score", color: "var(--color-primary-container)" };
+
+  const myDistance =
+    location.fix && venuePoint ? distanceM(location.fix, venuePoint) : null;
 
   return (
     <>
       <AppHeader context="Active Meetup" />
       <Shell>
-        <div className="flex w-full flex-col gap-space-md pb-44">
+        <div className="flex w-full flex-col gap-space-md pb-64">
           {/* ── Utility bar ──────────────────────────────────── */}
           <div className="flex items-center justify-between gap-2 py-space-sm">
             <span className="bg-surface-container sticker-sm flex items-center gap-space-xs rounded-full border-2 border-ink px-3 py-1.5">
@@ -271,6 +301,7 @@ function LiveMeetupScreen() {
           ) : (
             <LiveTracker
               participants={participants}
+              venue={venuePoint}
               myId={me.id}
               now={now}
               nudgeCounts={nudgeCounts}
@@ -283,6 +314,14 @@ function LiveMeetupScreen() {
       {/* ── Sticky status bar ──────────────────────────────── */}
       <div className="bg-surface/90 fixed right-0 bottom-0 left-0 z-40 mx-auto max-w-[540px] p-margin pb-safe backdrop-blur-md">
         <div className="flex flex-col gap-space-xs">
+          {me.status !== "arrived" && (
+            <SharingStrip
+              location={location}
+              distance={myDistance}
+              canSwitchToGps={!location.sharing && me.status !== "idle" && gpsAvailable}
+            />
+          )}
+
           <PrimaryButton
             onClick={primaryAction}
             disabled={busy}
@@ -294,7 +333,22 @@ function LiveMeetupScreen() {
           </PrimaryButton>
 
           <div className="grid grid-cols-2 gap-space-sm pt-1">
-            {myStatus === "moving" || myStatus === "late" ? (
+            {location.sharing ? (
+              <GhostButton
+                onClick={async () => {
+                  await location.stop();
+                  toast("Stopped sharing — your location was erased", "location_off");
+                }}
+              >
+                <Icon name="location_off" size={18} />
+                Stop sharing
+              </GhostButton>
+            ) : offerGps ? (
+              <GhostButton onClick={() => setEtaOpen(true)}>
+                <Icon name="schedule" size={18} />
+                Use an ETA
+              </GhostButton>
+            ) : myStatus === "moving" || myStatus === "late" ? (
               <GhostButton
                 disabled={busy}
                 onClick={() =>
@@ -336,4 +390,78 @@ function LiveMeetupScreen() {
       )}
     </>
   );
+}
+
+/** What sharing is doing right now, above the main button. */
+function SharingStrip({
+  location,
+  distance,
+  canSwitchToGps,
+}: {
+  location: ReturnType<typeof useLocationSharing>;
+  distance: number | null;
+  canSwitchToGps: boolean;
+}) {
+  if (location.state === "denied") {
+    return (
+      <p className="bg-error-container text-on-error-container rounded-xl border-2 border-ink px-3 py-2 text-body-sm">
+        Location is blocked for this site. Allow it in your browser&apos;s site settings, or use an
+        ETA instead.
+      </p>
+    );
+  }
+
+  if (location.sharing) {
+    const headline =
+      location.state === "locating"
+        ? "Finding you…"
+        : location.state === "unavailable"
+          ? "No GPS signal yet — try near a window"
+          : distance !== null
+            ? `Live · ${formatDistance(distance)} to go · ~${travelMinutes(distance, location.fix?.speed ?? null)} min`
+            : "Sharing your live location";
+
+    return (
+      <div className="bg-surface-container-lowest sticker-xs flex items-center justify-between gap-2 rounded-xl border-2 border-ink px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-on-surface flex items-center gap-1.5 text-label-md font-headline">
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${location.state === "live" ? "animate-pulse" : ""}`}
+              style={{ backgroundColor: "var(--color-status-arrived)" }}
+            />
+            <span className="truncate">{headline}</span>
+          </p>
+          <p className="text-on-surface-variant text-[11px] leading-tight">
+            Keep this page open — phones pause location in the background.
+          </p>
+        </div>
+        {location.wakeLockSupported && (
+          <label className="text-on-surface-variant flex shrink-0 cursor-pointer items-center gap-1.5 text-[11px] font-headline">
+            <input
+              type="checkbox"
+              checked={location.keepAwake}
+              onChange={(e) => location.setKeepAwake(e.target.checked)}
+              className="accent-[var(--color-primary-container)] h-4 w-4"
+            />
+            Screen on
+          </label>
+        )}
+      </div>
+    );
+  }
+
+  if (canSwitchToGps) {
+    return (
+      <button
+        type="button"
+        onClick={location.start}
+        className="text-on-surface-variant flex items-center justify-center gap-1 py-1 text-label-md font-headline underline"
+      >
+        <Icon name="my_location" size={16} className="text-primary" />
+        Share live location instead
+      </button>
+    );
+  }
+
+  return null;
 }

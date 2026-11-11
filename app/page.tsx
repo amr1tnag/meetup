@@ -64,7 +64,7 @@ export default function HomePage() {
               Start a meetup
             </PrimaryButton>
             <PrivacyNote>
-              No GPS tracking. Friends see the ETA you pick, and only inside the room.
+              Live location is opt-in, seen only by your room, and erased when you arrive.
             </PrivacyNote>
           </div>
 

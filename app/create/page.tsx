@@ -246,8 +246,8 @@ export default function CreatePage() {
               <div className="text-on-surface-variant flex items-start justify-center gap-1.5 px-4 py-1 text-center">
                 <Icon name="lock" size={15} className="mt-0.5" />
                 <p className="text-body-sm">
-                  Link auto-expires when everyone arrives. Locations are erased
-                  immediately.
+                  Only people with the link can see the room. Live locations are erased
+                  the moment each person arrives.
                 </p>
               </div>
             </div>

@@ -7,6 +7,17 @@ import { StreetGrid } from "./MapCanvas";
 import { VenueMap } from "./VenueMap";
 import { type Place, searchPlaces } from "@/lib/geocode";
 
+/** The venue marker, standing on its point. */
+export function SpotPin({ x, y }: { x: number; y: number }) {
+  return (
+    <div className="absolute -translate-x-1/2 -translate-y-full" style={{ left: x, top: y }}>
+      <div className="bg-primary-container sticker-sm flex h-7 w-7 items-center justify-center rounded-full border-2 border-ink ring-4 ring-white/80">
+        <Icon name="location_on" size={16} fill className="text-on-primary" />
+      </div>
+    </div>
+  );
+}
+
 /** What the create screen gets back: a place, with or without a location. */
 export type Spot = {
   venue: string;
@@ -164,17 +175,21 @@ export function VenuePicker({
 
       {/* Preview */}
       <div className="bg-surface-container relative isolate h-36 w-full overflow-hidden rounded-lg border-2 border-ink">
-        {hasCoords ? <VenueMap lat={value!.lat!} lng={value!.lng!} zoom={16} /> : <StreetGrid />}
+        {hasCoords ? (
+          <VenueMap
+            fit={[[value!.lat!, value!.lng!]]}
+            padding={{ top: 40, right: 24, bottom: 24, left: 24 }}
+          >
+            {(project) => {
+              const pt = project(value!.lat!, value!.lng!);
+              return pt ? <SpotPin x={pt.x} y={pt.y} /> : null;
+            }}
+          </VenueMap>
+        ) : (
+          <StreetGrid />
+        )}
 
-        <div className="pointer-events-none absolute inset-0 z-[500]">
-          {hasCoords && (
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full">
-              <div className="bg-primary-container sticker-sm flex h-7 w-7 items-center justify-center rounded-full border-2 border-ink ring-4 ring-white/80">
-                <Icon name="location_on" size={16} fill className="text-on-primary" />
-              </div>
-            </div>
-          )}
-
+        <div className="pointer-events-none absolute inset-0 z-[550]">
           <div className="from-inverse-surface/50 absolute inset-x-0 bottom-0 flex items-end bg-gradient-to-t to-transparent p-2.5 pb-5">
             <span className="bg-surface-container-lowest/95 text-on-surface sticker-xs flex min-w-0 items-center gap-1.5 rounded-full border border-ink px-2.5 py-1 text-label-status font-headline">
               <span
