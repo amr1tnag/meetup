@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   STATUS_META,
   type Participant,
@@ -14,6 +16,16 @@ import { VenueMap, type Project } from "./VenueMap";
 
 /** The venue header card plus the pin's own height need this much room on top. */
 const TOP_CLEARANCE = 130;
+/** Full screen has no header card over the map, only the pin's own height. */
+const FULL_TOP_CLEARANCE = 72;
+
+type MapProps = {
+  participants: Participant[];
+  venue: string;
+  lat: number | null;
+  lng: number | null;
+  now: number | null;
+};
 
 /**
  * The live map.
@@ -23,23 +35,161 @@ const TOP_CLEARANCE = 130;
  * - Everyone else orbits the venue pin by ETA (see orbitOffset).
  * - With a venue location or anyone sharing, the backdrop is a real
  *   OpenStreetMap view framing all of them; otherwise the drawn grid.
+ *
+ * The inline map is fixed so it never hijacks page scrolling on a phone;
+ * the expand button opens a full-screen copy you can pan and pinch-zoom.
  */
 export function MapCanvas({
+  height = 300,
+  children,
+  ...props
+}: MapProps & { height?: number; children?: React.ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  const realMap = hasRealMap(props);
+
+  return (
+    <div
+      className="bg-surface-container-high sticker relative isolate w-full overflow-hidden rounded-sticker border-2 border-ink"
+      style={{ height }}
+    >
+      <MapBody {...props} height={height} topClearance={TOP_CLEARANCE} />
+
+      {/* Caller overlays (the venue header card) sit above everything. */}
+      <div className="pointer-events-none absolute inset-0 z-[600] [&>*]:pointer-events-auto">
+        {children}
+      </div>
+
+      {realMap && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-label="Expand map"
+          className="bg-surface-container-lowest text-on-surface sticker-sm press absolute right-2 bottom-6 z-[650] flex h-9 w-9 items-center justify-center rounded-xl border-2 border-ink"
+        >
+          <Icon name="open_in_full" size={18} />
+        </button>
+      )}
+
+      {expanded && <FullscreenMap {...props} onClose={() => setExpanded(false)} />}
+    </div>
+  );
+}
+
+function hasRealMap(p: MapProps): boolean {
+  return (
+    (p.lat !== null && p.lng !== null) ||
+    p.participants.some((x) => x.lat !== null && x.lng !== null && x.status !== "arrived")
+  );
+}
+
+/* ── Full screen: same map, but you can pan and zoom ─────────────── */
+
+function FullscreenMap({ onClose, ...props }: MapProps & { onClose: () => void }) {
+  const area = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+  const [refitKey, setRefitKey] = useState(0);
+
+  // The map body needs a pixel height to lay out the ETA ring.
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => setHeight(Math.round(entry!.contentRect.height)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Esc closes; the page behind shouldn't scroll while the map is open.
+  // Runs once per opening: `onClose` is a fresh function on every parent
+  // render, and re-running would capture "hidden" as the value to restore,
+  // leaving the page unscrollable after closing.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCloseRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  const sharing = props.participants.filter(
+    (p) => p.lat !== null && p.lng !== null && p.status !== "arrived",
+  ).length;
+
+  return createPortal(
+    <div
+      className="bg-surface fixed inset-0 z-[80] flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Map of ${props.venue}`}
+    >
+      <div className="bg-surface-container-lowest flex items-center justify-between gap-2 border-b-2 border-ink px-margin pt-safe py-2">
+        <div className="min-w-0">
+          <p className="text-on-surface truncate text-headline-sm font-headline">{props.venue}</p>
+          <p className="text-on-surface-variant text-body-sm">
+            {sharing > 0 ? `${sharing} sharing live location` : "Nobody is sharing location yet"}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setRefitKey((k) => k + 1)}
+            className="bg-surface-container-lowest text-on-surface sticker-sm press flex min-h-[40px] items-center gap-1 rounded-xl border-2 border-ink px-3 text-label-md font-headline"
+          >
+            <Icon name="fit_screen" size={18} />
+            Fit everyone
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close map"
+            className="bg-surface-container-lowest text-on-surface sticker-sm press flex h-10 w-10 items-center justify-center rounded-xl border-2 border-ink"
+          >
+            <Icon name="close" size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div ref={area} className="relative isolate flex-1 overflow-hidden">
+        {height > 0 && (
+          <MapBody
+            {...props}
+            height={height}
+            topClearance={FULL_TOP_CLEARANCE}
+            interactive
+            refitKey={refitKey}
+          />
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/* ── What's inside either map: backdrop, pins, legend ────────────── */
+
+function MapBody({
   participants,
   venue,
   lat,
   lng,
   now,
-  height = 300,
-  children,
-}: {
-  participants: Participant[];
-  venue: string;
-  lat: number | null;
-  lng: number | null;
-  now: number | null;
-  height?: number;
-  children?: React.ReactNode;
+  height,
+  topClearance,
+  interactive = false,
+  refitKey = 0,
+}: MapProps & {
+  height: number;
+  topClearance: number;
+  interactive?: boolean;
+  refitKey?: number;
 }) {
   const hasVenue = lat !== null && lng !== null;
   const sharers = participants.filter(
@@ -69,17 +219,16 @@ export function MapCanvas({
       : null;
 
   return (
-    <div
-      className="bg-surface-container-high sticker relative isolate w-full overflow-hidden rounded-sticker border-2 border-ink"
-      style={{ height }}
-    >
+    <>
       {fit.length > 0 ? (
         <VenueMap
           fit={fit}
+          interactive={interactive}
+          refitKey={refitKey}
           // ETA mode centres the lone venue point with room below for the
           // ring; GPS mode only needs space for the bottom strip.
           padding={{
-            top: TOP_CLEARANCE,
+            top: topClearance,
             right: 44,
             bottom: geoMode ? 56 : hasVenue && orbiters.length > 0 ? 118 : 44,
             left: 44,
@@ -125,12 +274,7 @@ export function MapCanvas({
           </span>
         </div>
       )}
-
-      {/* Caller overlays (the venue header card) sit above everything. */}
-      <div className="pointer-events-none absolute inset-0 z-[600] [&>*]:pointer-events-auto">
-        {children}
-      </div>
-    </div>
+    </>
   );
 }
 

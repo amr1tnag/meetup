@@ -7,6 +7,7 @@ import { Icon } from "@/components/Icon";
 import { useToast } from "@/components/Toast";
 import { GhostButton, PrimaryButton, StickerCard } from "@/components/ui";
 import { useRoom } from "@/lib/room";
+import { MeetupGone } from "@/components/MeetupGone";
 import { type Participant, clockTime, initials } from "@/lib/types";
 
 /** Playful rank titles, in arrival order. */
@@ -46,6 +47,8 @@ function RecapScreen() {
   }, [room.kind, code, router]);
 
   if (room.kind === "loading" || room.kind === "preview") return <RecapLoading />;
+
+  if (room.kind === "ended") return <MeetupGone code={code} ended />;
 
   if (room.kind !== "member") {
     return (

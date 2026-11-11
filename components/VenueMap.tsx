@@ -37,11 +37,20 @@ export function VenueMap({
   fit,
   padding = { top: 24, right: 24, bottom: 24, left: 24 },
   maxZoom = 16,
+  interactive = false,
+  refitKey = 0,
   children,
 }: {
   fit: [number, number][];
   padding?: Padding;
   maxZoom?: number;
+  /**
+   * Pan, pinch and zoom. An interactive map frames everyone once and then
+   * leaves the view to the user — refitting as friends move would yank it
+   * away mid-pan. Bump `refitKey` to reframe on demand.
+   */
+  interactive?: boolean;
+  refitKey?: number;
   children?: (project: Project) => ReactNode;
 }) {
   const el = useRef<HTMLDivElement>(null);
@@ -75,16 +84,17 @@ export function VenueMap({
       const m = L.map(el.current, {
         center: spec.fit[0] ?? [20.6, 78.9],
         zoom: spec.maxZoom,
-        zoomControl: false,
-        dragging: false,
-        touchZoom: false,
-        scrollWheelZoom: false,
-        doubleClickZoom: false,
+        zoomControl: interactive,
+        dragging: interactive,
+        touchZoom: interactive,
+        scrollWheelZoom: interactive,
+        doubleClickZoom: interactive,
         boxZoom: false,
-        keyboard: false,
+        keyboard: interactive,
         attributionControl: true,
       });
       m.attributionControl.setPrefix(false);
+      if (interactive) m.zoomControl.setPosition("bottomright");
 
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
@@ -109,12 +119,29 @@ export function VenueMap({
       created?.remove();
       setLmap(null);
     };
+    // `interactive` is fixed for a map's lifetime; callers remount to change it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reframe when someone moves, joins or stops sharing.
+  // A static map reframes whenever someone moves, joins or stops sharing.
+  // An interactive one only when asked (refitKey), so it never fights a pan.
+  const frameKey = interactive ? String(refitKey) : fitKey;
   useEffect(() => {
     if (lmap) frame(lmap, specRef.current, true);
-  }, [fitKey, lmap]);
+  }, [frameKey, lmap]);
+
+  // Leaflet only notices window resizes, not its own box changing — e.g. the
+  // live map growing from the solo height once a friend joins. Without this
+  // it keeps the old size: tiles stop short (grey band) and the fit is wrong.
+  useEffect(() => {
+    if (!lmap || !el.current) return;
+    const ro = new ResizeObserver(() => {
+      lmap.invalidateSize({ animate: false });
+      if (!interactive) frame(lmap, specRef.current, false);
+    });
+    ro.observe(el.current);
+    return () => ro.disconnect();
+  }, [lmap, interactive]);
 
   const project: Project = (lat, lng) => {
     if (!lmap) return null;

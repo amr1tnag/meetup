@@ -25,6 +25,8 @@ export type RoomState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "missing" }
+  /** The host deleted the room while we had it open. */
+  | { kind: "ended" }
   | { kind: "preview"; meetup: Meetup; roster: PreviewPerson[] }
   | {
       kind: "member";
@@ -168,6 +170,15 @@ export function useRoom(
                 );
               },
             )
+            // The host deleted the room. Watch the meetup row itself: the
+            // cascaded participant deletes don't produce realtime events.
+            .on(
+              "postgres_changes",
+              { event: "DELETE", schema: "public", table: "meetups", filter: `id=eq.${meetup.id}` },
+              () => {
+                if (!cancelled) setState({ code, room: { kind: "ended" } });
+              },
+            )
             .subscribe((status, err) => {
               if (status === "SUBSCRIBED") resolve();
               else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
@@ -292,6 +303,20 @@ export async function createMeetup(input: {
   });
   if (error) throw new Error(friendlyError(error));
   return data as string;
+}
+
+/**
+ * Delete a meetup and everything in it. Only its host can; RLS makes the
+ * delete match nothing for anyone else, which is reported as an error.
+ */
+export async function deleteMeetup(meetupId: string): Promise<void> {
+  const { data, error } = await getSupabase()
+    .from("meetups")
+    .delete()
+    .eq("id", meetupId)
+    .select("id");
+  if (error) throw new Error(friendlyError(error));
+  if (!data || data.length === 0) throw new Error("Only the host can delete this meetup");
 }
 
 export async function joinMeetup(code: string, name: string, tint: string): Promise<void> {

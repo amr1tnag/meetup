@@ -102,10 +102,23 @@ design/              where the UI came from
   the venue's coordinates on the meetup (`venue_lat`/`venue_lng`). Venues used
   "without a map" have no coordinates and get the drawn street grid instead.
 - **The map** (`components/VenueMap.tsx`) is Leaflet with OpenStreetMap tiles,
-  non-interactive, framing the venue plus everyone sharing GPS. Callers draw
-  pins in React through a `project(lat, lng)` render prop. "Open maps" hands off
-  to the phone's maps app with the exact coordinates. The © OpenStreetMap
-  credit must stay visible; overlays are kept away from the bottom-right corner.
+  framing the venue plus everyone sharing GPS. Callers draw pins in React
+  through a `project(lat, lng)` render prop. The inline map is fixed so it
+  never steals page scroll on a phone and reframes as people move; the expand
+  button opens a full-screen copy (`interactive`) you can pan and pinch-zoom,
+  which frames once and then only on "Fit everyone" so it never fights a pan.
+  A ResizeObserver calls `invalidateSize`, since Leaflet only watches window
+  resizes. "Open maps" hands off to the phone's maps app with the exact
+  coordinates. The © OpenStreetMap credit must stay visible.
+
+### Deleting a meetup
+
+The host can delete the room from the live screen (after a confirmation).
+RLS allows the delete only for `created_by = auth.uid()`; participants and
+nudges cascade, which erases any stored locations. Everyone else with the room
+open sees "The host ended this meetup" immediately. The app listens for the
+DELETE on the meetup row itself, because cascaded participant deletes don't
+produce realtime events.
 
 ### Live GPS location
 
@@ -163,7 +176,8 @@ anyone else in a "not sharing location" strip, not at a made-up distance.
   For heavy traffic, self-host Photon or move to a paid geocoder.
 - **Anonymous sign-ins are unprotected against abuse.** Supabase rate-limits
   them per IP (30/hour). Add CAPTCHA (Turnstile/hCaptcha) before a public launch.
-- **Rooms never expire.** Nothing deletes old meetups yet.
+- **Rooms don't expire on their own.** Hosts can delete them; nothing removes
+  abandoned ones automatically yet.
 - **Nudges notify only while the room is open.** No push notifications.
 - **The QR code** is decorative, not a scannable encoding.
 - **Not deployed.** When you deploy, add the two `NEXT_PUBLIC_SUPABASE_*`

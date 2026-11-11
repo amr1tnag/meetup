@@ -9,9 +9,10 @@ import { MapCanvas } from "@/components/MapCanvas";
 import { LiveTracker } from "@/components/LiveTracker";
 import { WaitingState } from "@/components/WaitingState";
 import { EtaSheet } from "@/components/EtaSheet";
+import { MeetupGone } from "@/components/MeetupGone";
 import { useToast } from "@/components/Toast";
 import { GhostButton, PrimaryButton, StickerCard } from "@/components/ui";
-import { arriveNow, leaveNow, runLate, sendNudge, useRoom } from "@/lib/room";
+import { arriveNow, deleteMeetup, leaveNow, runLate, sendNudge, useRoom } from "@/lib/room";
 import { useNow, useOrigin } from "@/lib/useNow";
 import { directionsUrl } from "@/lib/geocode";
 import { distanceM, formatDistance, travelMinutes } from "@/lib/geo";
@@ -60,6 +61,7 @@ function LiveMeetupScreen() {
 
   const [etaOpen, setEtaOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const member = room.kind === "member" ? room : null;
   const venuePoint =
@@ -109,25 +111,8 @@ function LiveMeetupScreen() {
     );
   }
 
-  if (room.kind === "missing") {
-    return (
-      <>
-        <AppHeader context="Not found" />
-        <Shell>
-          <StickerCard className="mt-6 flex flex-col items-center gap-3 p-6 text-center">
-            <span className="text-headline-lg">🫥</span>
-            <h1 className="text-headline-md font-headline">No such room</h1>
-            <p className="text-on-surface-variant text-body-md">
-              <span className="font-headline">{code}</span> doesn&apos;t exist. Double-check
-              the link you were sent.
-            </p>
-            <Link href="/create" className="w-full">
-              <PrimaryButton>Start a meetup</PrimaryButton>
-            </Link>
-          </StickerCard>
-        </Shell>
-      </>
-    );
+  if (room.kind === "missing" || room.kind === "ended") {
+    return <MeetupGone code={code} ended={room.kind === "ended"} />;
   }
 
   const { meetup, participants, me } = room;
@@ -237,6 +222,15 @@ function LiveMeetupScreen() {
                 <Icon name="ios_share" size={19} />
                 <span className="sr-only">Share meetup link</span>
               </GhostButton>
+              {me.isHost && (
+                <GhostButton
+                  onClick={() => setConfirmDelete(true)}
+                  className="min-h-[36px] w-9 px-0 py-1.5"
+                >
+                  <Icon name="delete" size={19} className="text-error" />
+                  <span className="sr-only">Delete meetup</span>
+                </GhostButton>
+              )}
             </div>
           </div>
 
@@ -388,7 +382,87 @@ function LiveMeetupScreen() {
           }}
         />
       )}
+
+      {confirmDelete && (
+        <DeleteConfirm
+          venue={meetup.venue}
+          people={participants.length}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={async () => {
+            try {
+              await deleteMeetup(meetup.id);
+              toast(`Deleted the meetup at ${meetup.venue}`, "delete");
+              router.replace("/");
+            } catch (err) {
+              toast(err instanceof Error ? err.message : "Couldn't delete the meetup", "error");
+              setConfirmDelete(false);
+            }
+          }}
+        />
+      )}
     </>
+  );
+}
+
+/** "Are you sure?" before a host deletes the room for everyone. */
+function DeleteConfirm({
+  venue,
+  people,
+  onCancel,
+  onConfirm,
+}: {
+  venue: string;
+  people: number;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const others = people - 1;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="delete-title"
+      onClick={deleting ? undefined : onCancel}
+    >
+      <div
+        className="bg-surface-container-lowest sticker-lg flex w-full max-w-[340px] flex-col gap-4 rounded-[24px] border-2 border-ink p-6 text-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-error-container sticker-sm mx-auto flex h-12 w-12 items-center justify-center rounded-full border-2 border-ink">
+          <Icon name="delete" size={26} className="text-error" />
+        </div>
+        <div className="space-y-1">
+          <h3 id="delete-title" className="text-on-surface text-headline-sm font-headline">
+            Delete this meetup?
+          </h3>
+          <p className="text-on-surface-variant text-body-sm">
+            The room at <span className="font-headline">{venue}</span> is removed for everyone
+            {others > 0 ? ` — ${others} ${others === 1 ? "other person is" : "others are"} in it` : ""}.
+            Their locations and nudges go too. This can&apos;t be undone.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <PrimaryButton
+            disabled={deleting}
+            onClick={async () => {
+              setDeleting(true);
+              await onConfirm();
+              setDeleting(false);
+            }}
+            style={{ backgroundColor: "var(--color-error)" }}
+          >
+            <Icon name={deleting ? "sync" : "delete"} size={20} className={deleting ? "animate-spin" : ""} />
+            {deleting ? "Deleting…" : "Delete meetup"}
+          </PrimaryButton>
+          <GhostButton onClick={onCancel} disabled={deleting} className="w-full">
+            Keep it
+          </GhostButton>
+        </div>
+      </div>
+    </div>
   );
 }
 

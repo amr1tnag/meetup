@@ -8,6 +8,7 @@ import { Icon } from "@/components/Icon";
 import { Avatar, PrimaryButton, Pill, PrivacyNote, StickerCard } from "@/components/ui";
 import { VenueMap } from "@/components/VenueMap";
 import { SpotPin } from "@/components/VenuePicker";
+import { MeetupGone } from "@/components/MeetupGone";
 import { useToast } from "@/components/Toast";
 import { joinMeetup, useRoom } from "@/lib/room";
 import { useNow } from "@/lib/useNow";
@@ -50,6 +51,8 @@ function JoinScreen() {
       </>
     );
   }
+
+  if (room.kind === "ended") return <MeetupGone code={code} ended />;
 
   if (room.kind === "missing") {
     return (
